@@ -1,6 +1,8 @@
 package imports
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 
@@ -83,5 +85,83 @@ func (suite *WakatimeImporterTestSuite) TestCheckUrl() {
 				suite.NoError(err)
 			}
 		})
+	}
+}
+
+func (suite *WakatimeImporterTestSuite) TestRedirectValidation() {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/start" {
+			http.Redirect(w, r, r.URL.Query().Get("target"), http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	importers := []struct {
+		name       string
+		httpClient *http.Client
+	}{
+		{"heartbeats importer", NewWakatimeHeartbeatImporter("test-key").httpClient},
+		{"dump importer", NewWakatimeDumpImporter("test-key").httpClient},
+	}
+
+	testCases := []struct {
+		name    string
+		env     string
+		target  string
+		wantErr bool
+		errText string
+	}{
+		{
+			name:    "redirect to own instance - denied",
+			env:     "dev",
+			target:  "https://wakapi.dev/api",
+			wantErr: true,
+			errText: "cannot use reference to own instance",
+		},
+		{
+			name:    "redirect to private ip - denied",
+			env:     "prod",
+			target:  "https://127.0.0.1/api",
+			wantErr: true,
+			errText: "cannot use private ip",
+		},
+		{
+			name:    "redirect to raw ip - denied",
+			env:     "prod",
+			target:  "https://8.8.8.8/api",
+			wantErr: true,
+			errText: "cannot use raw ip",
+		},
+		{
+			name:    "redirect to loopback test server in dev - allowed",
+			env:     "dev",
+			target:  srv.URL + "/done",
+			wantErr: false,
+		},
+	}
+
+	for _, importer := range importers {
+		for _, t := range testCases {
+			suite.Run(importer.name+" - "+t.name, func() {
+				suite.conf.Env = t.env
+				config.Set(suite.conf)
+
+				req, err := http.NewRequest(http.MethodGet, srv.URL+"/start?target="+url.QueryEscape(t.target), nil)
+				suite.Require().NoError(err)
+
+				res, err := importer.httpClient.Do(req)
+
+				if t.wantErr {
+					suite.Error(err)
+					suite.Contains(err.Error(), t.errText)
+				} else {
+					suite.Require().NoError(err)
+					defer res.Body.Close()
+					suite.Equal(http.StatusOK, res.StatusCode)
+				}
+			})
+		}
 	}
 }

@@ -6,16 +6,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/duke-git/lancet/v2/slice"
-	"github.com/muety/wakapi/utils"
 	"net/http"
 	"time"
+
+	"github.com/duke-git/lancet/v2/slice"
+	routeutils "github.com/muety/wakapi/routes/utils"
+	"github.com/muety/wakapi/utils"
+
+	"log/slog"
 
 	"github.com/muety/artifex/v2"
 	"github.com/muety/wakapi/config"
 	"github.com/muety/wakapi/models"
 	wakatime "github.com/muety/wakapi/models/compat/wakatime/v1"
-	"log/slog"
 )
 
 // data example: https://github.com/muety/wakapi/issues/323#issuecomment-1627467052
@@ -28,9 +31,11 @@ type WakatimeDumpImporter struct {
 
 func NewWakatimeDumpImporter(apiKey string) *WakatimeDumpImporter {
 	return &WakatimeDumpImporter{
-		apiKey:     apiKey,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		queue:      config.GetQueue(config.QueueImports),
+		apiKey: apiKey,
+		httpClient: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return routeutils.ValidateWakatimeUrl(req.URL.String())
+		}},
+		queue: config.GetQueue(config.QueueImports),
 	}
 }
 

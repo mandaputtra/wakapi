@@ -5,19 +5,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/alitto/pond/v2"
-	"github.com/duke-git/lancet/v2/datetime"
-	"github.com/muety/artifex/v2"
-	"github.com/muety/wakapi/utils"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/alitto/pond/v2"
+	"github.com/duke-git/lancet/v2/datetime"
+	"github.com/muety/artifex/v2"
+	routeutils "github.com/muety/wakapi/routes/utils"
+	"github.com/muety/wakapi/utils"
+
+	"log/slog"
 
 	"github.com/muety/wakapi/config"
 	"github.com/muety/wakapi/models"
 	wakatime "github.com/muety/wakapi/models/compat/wakatime/v1"
 	"go.uber.org/atomic"
-	"log/slog"
 )
 
 const OriginWakatime = "wakatime"
@@ -37,9 +40,11 @@ type WakatimeHeartbeatsImporter struct {
 
 func NewWakatimeHeartbeatImporter(apiKey string) *WakatimeHeartbeatsImporter {
 	return &WakatimeHeartbeatsImporter{
-		apiKey:     apiKey,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		queue:      config.GetQueue(config.QueueImports),
+		apiKey: apiKey,
+		httpClient: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return routeutils.ValidateWakatimeUrl(req.URL.String())
+		}},
+		queue: config.GetQueue(config.QueueImports),
 	}
 }
 
